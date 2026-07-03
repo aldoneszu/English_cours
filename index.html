@@ -489,6 +489,14 @@ footer .credit b{color:var(--gold-soft);}
 .duel-status.waiting{color:var(--gold);}
 .duel-status.done{color:#0e7a5c; font-weight:700;}
 
+.ambr-card{background:#fff; border:1px solid var(--border); border-radius:14px; padding:16px 20px; margin-bottom:10px; display:flex; align-items:center; gap:16px; flex-wrap:wrap;}
+.ambr-word{color:var(--muted); font-size:13px; min-width:80px;}
+.ambr-versions{display:flex; gap:20px; flex:1; flex-wrap:wrap;}
+.ambr-version{display:flex; align-items:center; gap:6px;}
+.ambr-version .flag{font-size:14px;}
+.ambr-version .term{font-weight:700; font-family:var(--font-display);}
+.slang-note{font-size:12px; color:var(--muted-2); margin-top:8px; border-top:1px dashed var(--border); padding-top:8px;}
+
 @media (max-width:860px){
   .app-sidebar{position:fixed; inset-inline-start:0; top:0; height:100vh; transform:translateX(110%); transition:transform .25s ease; z-index:200;}
   html[dir="rtl"] .app-sidebar{transform:translateX(110%);}
@@ -524,7 +532,7 @@ footer .credit b{color:var(--gold-soft);}
 <div id="landingPage">
   <div class="container landing-nav">
     <div class="brand"><span class="dot"></span> نافورة</div>
-    <button class="btn btn-ghost btn-sm" onclick="Router.go('login')">تسجيل الدخول</button>
+    <button class="btn btn-ghost btn-sm" onclick="Router.go('loginScreen')">تسجيل الدخول</button>
   </div>
 
   <section class="hero container">
@@ -532,7 +540,7 @@ footer .credit b{color:var(--gold-soft);}
     <h1>من صفر ما تعرفش تقول <em>"Hello"</em>، لحد ما تفكّر بالإنجليزي</h1>
     <p class="lead">مش كورس تاني هتسيبه بعد أسبوعين. رحلة كاملة ومتدرجة بتاخدك خطوة خطوة لحد ما توصل تتكلم بطلاقة، وتفهم أي حد، وتعدي IELTS و TOEFL براحتك.</p>
     <div class="hero-ctas">
-      <button class="btn btn-gold" onclick="Router.go('register')">ابدأ رحلتك دلوقتي</button>
+      <button class="btn btn-gold" onclick="Router.go('registerScreen')">ابدأ رحلتك دلوقتي</button>
       <a class="btn btn-ghost" href="https://wa.me/201013091169" target="_blank">اسأل عن الاشتراك على واتساب</a>
     </div>
     <div class="passport-strip" id="passportStrip"></div>
@@ -558,7 +566,7 @@ footer .credit b{color:var(--gold-soft);}
       <div class="hook-banner">
         <h3>الأماكن محدودة كل شهر عشان نضمن متابعة حقيقية لكل مشترك</h3>
         <p>اشتراكك بيتفعّل بكود شخصي باسمك، ومربوط بجهازك بس. جرّب 3 أيام مجانًا وشوف الفرق بنفسك.</p>
-        <button class="btn btn-gold" onclick="Router.go('register')">احجز مكانك</button>
+        <button class="btn btn-gold" onclick="Router.go('registerScreen')">احجز مكانك</button>
       </div>
     </div>
   </section>
@@ -572,7 +580,7 @@ footer .credit b{color:var(--gold-soft);}
 
   <div class="sticky-hook" id="stickyHook">
     ⏳ <span><strong id="hookText">جرب المنصة دلوقتي</strong> — تجربة مجانية 3 أيام</span>
-    <button class="btn btn-gold btn-sm" onclick="Router.go('register')">ابدأ</button>
+    <button class="btn btn-gold btn-sm" onclick="Router.go('registerScreen')">ابدأ</button>
   </div>
 </div>
 
@@ -605,7 +613,7 @@ footer .credit b{color:var(--gold-soft);}
       </div>
       <button class="btn btn-dark btn-block" type="submit" id="regSubmitBtn">إنشاء الحساب</button>
     </form>
-    <div class="auth-switch">عندك حساب بالفعل؟ <button onclick="Router.go('login')">سجّل دخول</button></div>
+    <div class="auth-switch">عندك حساب بالفعل؟ <button onclick="Router.go('loginScreen')">سجّل دخول</button></div>
   </div>
 </div>
 
@@ -628,11 +636,11 @@ footer .credit b{color:var(--gold-soft);}
       </div>
       <div class="auth-links">
         <span></span>
-        <button type="button" onclick="Router.go('forgot')">نسيت كلمة المرور؟</button>
+        <button type="button" onclick="Router.go('forgotScreen')">نسيت كلمة المرور؟</button>
       </div>
       <button class="btn btn-dark btn-block" type="submit" id="loginSubmitBtn">دخول</button>
     </form>
-    <div class="auth-switch">مستخدم جديد؟ <button onclick="Router.go('register')">أنشئ حساب</button></div>
+    <div class="auth-switch">مستخدم جديد؟ <button onclick="Router.go('registerScreen')">أنشئ حساب</button></div>
   </div>
 </div>
 
@@ -651,7 +659,7 @@ footer .credit b{color:var(--gold-soft);}
       </div>
       <button class="btn btn-dark btn-block" type="submit">إرسال رابط الاستعادة</button>
     </form>
-    <div class="auth-switch"><button onclick="Router.go('login')">رجوع لتسجيل الدخول</button></div>
+    <div class="auth-switch"><button onclick="Router.go('loginScreen')">رجوع لتسجيل الدخول</button></div>
   </div>
 </div>
 
@@ -738,6 +746,7 @@ footer .credit b{color:var(--gold-soft);}
         <button class="lesson-tab" data-tab="reading" onclick="Lessons.switchTab('reading')">📖 قراءة</button>
         <button class="lesson-tab" data-tab="pronunciation" onclick="Lessons.switchTab('pronunciation')">🎤 نطق</button>
         <button class="lesson-tab" data-tab="idioms" onclick="Lessons.switchTab('idioms')">💡 تعبيرات ومصطلحات</button>
+        <button class="lesson-tab" data-tab="amBr" onclick="Lessons.switchTab('amBr')">🇺🇸🇬🇧 عامية وفروقات</button>
         <button class="lesson-tab" data-tab="quiz" onclick="Lessons.switchTab('quiz')">📝 اختبار المستوى</button>
       </div>
       <div id="lessonContent"></div>
@@ -1059,6 +1068,7 @@ const Auth = {
         stats: { lessons:0, words:0, conversations:0, quizzes:0 },
         learnedWords: {},
         wrongWords: {},
+        completedLevels: {},
         subscription: { status: 'none', codeId: null, expiresAt: null },
         presence: { online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP }
       });
@@ -1097,7 +1107,7 @@ const Auth = {
     try{
       await auth.sendPasswordResetEmail(email);
       Toast.show('اتبعت رابط إعادة التعيين على إيميلك ✅', 'success');
-      Router.go('login');
+      Router.go('loginScreen');
     }catch(err){
       Toast.show(friendlyAuthError(err.code), 'error');
     }
@@ -1468,6 +1478,24 @@ vocabulary: [
         { spk:'B', en:'Thank you very much.', ar:'شكرًا جزيلًا.' },
       ]
     },
+    {
+      title: 'في المدرسة (At School)',
+      lines: [
+        { spk:'A', en:'Good morning! Are you a new student?', ar:'صباح الخير! إنت طالب جديد؟' },
+        { spk:'B', en:'Yes, this is my first day.', ar:'أيوه، ده أول يوم ليا.' },
+        { spk:'A', en:'Welcome! What is your name?', ar:'أهلاً بيك! إيه اسمك؟' },
+        { spk:'B', en:'My name is Ahmed. Thank you.', ar:'اسمي أحمد. شكرًا.' },
+      ]
+    },
+    {
+      title: 'التسوق (Shopping)',
+      lines: [
+        { spk:'A', en:'Can I help you?', ar:'أقدر أساعدك؟' },
+        { spk:'B', en:'Yes, I want a small red bag, please.', ar:'أيوه، عايز شنطة صغيرة حمرا، من فضلك.' },
+        { spk:'A', en:'Here you are. It is cheap today.', ar:'اتفضل. رخيصة النهاردة.' },
+        { spk:'B', en:'Great, thank you!', ar:'رائع، شكرًا!' },
+      ]
+    },
   ],
   listening: [
     { en:'My name is Sara.', ar:'اسمي سارة.' },
@@ -1509,6 +1537,24 @@ vocabulary: [
     { en:'Good luck', ar:'بالتوفيق', ex:'Good luck in your exam!', exAr:'بالتوفيق في الامتحان!' },
     { en:'My pleasure', ar:'دي وظيفتي / تحت أمرك', ex:'"Thanks for the help." "My pleasure!"', exAr:'"شكرًا على المساعدة." "دي وظيفتي!"' },
     { en:'Take care', ar:'خلي بالك من نفسك', ex:'Take care and see you tomorrow.', exAr:'خلي بالك من نفسك، أشوفك بكرة.' },
+  ],
+  slang: [
+    { en:'Gonna', ar:'هعمل/هروح (اختصار going to)', ex:'I\'m gonna eat now.', exAr:'أنا هاكل دلوقتي.', note:'بيتقال في الكلام العادي بس متستخدمهاش في الكتابة الرسمية.' },
+    { en:'Wanna', ar:'عايز (اختصار want to)', ex:'I wanna go home.', exAr:'عايز أروح البيت.', note:'زي "gonna"، للكلام مش للكتابة الرسمية.' },
+    { en:'Cool', ar:'حلو/جامد', ex:'That movie was cool!', exAr:'الفيلم ده كان جامد!', note:'بديل غير رسمي لكلمة great أو nice.' },
+    { en:'Awesome', ar:'رهيب', ex:'Awesome! Let\'s go.', exAr:'رهيب! يلا بينا.', note:'تعبير حماس شائع جدًا في أمريكا.' },
+    { en:'No way!', ar:'مستحيل!/مش معقول!', ex:'No way! Really?', exAr:'مستحيل! بجد؟', note:'تعبير دهشة أو رفض.' },
+    { en:'For sure', ar:'أكيد/تمام', ex:'"See you tomorrow?" "For sure!"', exAr:'"أشوفك بكرة؟" "أكيد!"', note:'بديل غير رسمي لـ definitely.' },
+  ],
+  amBr: [
+    { word:'اللون', us:'Color', uk:'Colour', ex:'What is your favorite color?', exAr:'إيه لونك المفضل؟' },
+    { word:'الشقة', us:'Apartment', uk:'Flat', ex:'I live in a small apartment.', exAr:'باعيش في شقة صغيرة.' },
+    { word:'أسانسير', us:'Elevator', uk:'Lift', ex:'Take the elevator to the third floor.', exAr:'اركب الأسانسير للدور التالت.' },
+    { word:'بسكوت', us:'Cookie', uk:'Biscuit', ex:'I love chocolate cookies.', exAr:'باحب البسكوت بالشوكولاتة.' },
+    { word:'إجازة', us:'Vacation', uk:'Holiday', ex:'We are on vacation this week.', exAr:'إحنا في إجازة الأسبوع ده.' },
+    { word:'كورة القدم', us:'Soccer', uk:'Football', ex:'He plays soccer every Friday.', exAr:'بيلعب كورة كل جمعة.' },
+    { word:'حلوى', us:'Candy', uk:'Sweets', ex:'Kids love candy.', exAr:'الأطفال بيحبوا الحلوى.' },
+    { word:'لوري', us:'Truck', uk:'Lorry', ex:'A big truck is on the road.', exAr:'فيه لوري كبير على الطريق.' },
   ]
   },
 
@@ -1948,8 +1994,52 @@ const Lessons = {
             </div>` : ''}
         `;
       }
+    } else if(this.currentTab === 'amBr'){
+      const data = currentLevelData();
+      const hasContent = (data.slang && data.slang.length) || (data.amBr && data.amBr.length);
+      if(!hasContent){
+        container.innerHTML = `<div class="trial-note">محتوى العامية والفروقات لمستوى ${data.label} لسه بيتضاف في الجلسات الجاية 🚧</div>`;
+      } else {
+        container.innerHTML = `
+          ${data.amBr && data.amBr.length ? `
+            <div class="lesson-section-title">🇺🇸🇬🇧 أمريكي مقابل بريطاني</div>
+            ${data.amBr.map(a => `
+              <div class="ambr-card">
+                <div class="ambr-word">${a.word}</div>
+                <div class="ambr-versions">
+                  <div class="ambr-version"><span class="flag">🇺🇸</span><span class="term">${a.us}</span>
+                    <button class="speak-btn" style="width:28px;height:28px;font-size:12px" onclick="Speech.speak('${a.us.replace(/'/g,"\\'")}','us',this)">🔊</button></div>
+                  <div class="ambr-version"><span class="flag">🇬🇧</span><span class="term">${a.uk}</span>
+                    <button class="speak-btn" style="width:28px;height:28px;font-size:12px" onclick="Speech.speak('${a.uk.replace(/'/g,"\\'")}','uk',this)">🔊</button></div>
+                </div>
+              </div>
+            `).join('')}` : ''}
+          ${data.slang && data.slang.length ? `
+            <div class="lesson-section-title">🗣️ عامية شائعة (Slang)</div>
+            <div class="word-grid">
+              ${data.slang.map(s => `
+                <div class="word-card">
+                  <div class="word-head"><span class="word-en">${s.en}</span></div>
+                  <div class="word-ar">${s.ar}</div>
+                  <div class="word-example"><span class="en">"${s.ex}"</span><br>${s.exAr}</div>
+                  <div class="slang-note">💡 ${s.note}</div>
+                  <button class="speak-btn" style="margin-top:12px" onclick="Speech.speak('${s.en.replace(/'/g,"\\'")}','us',this)">🔊 US</button>
+                </div>
+              `).join('')}
+            </div>` : ''}
+        `;
+      }
     } else if(this.currentTab === 'quiz'){
-      Quiz.start();
+      container.innerHTML = `
+        <div class="challenge-card">
+          <h3>📝 اختبارات مستوى ${currentLevelData().label}</h3>
+          <p style="color:var(--muted); margin-bottom:20px;">اختار نوع الاختبار المناسب ليك دلوقتي</p>
+          <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
+            <button class="btn btn-teal" onclick="Quiz.start()">⚡ اختبار سريع (8 أسئلة مفردات)</button>
+            <button class="btn btn-gold" onclick="FinalExam.start()">🎓 الامتحان النهائي الشامل (15 سؤال)</button>
+          </div>
+          <p style="color:var(--muted-2); font-size:12px; margin-top:16px;">الامتحان النهائي بيغطي المفردات والتعبيرات والأفعال المركبة مع بعض، ولازم ٨٠٪ عشان تاخد ختم إتقان المستوى 🏅</p>
+        </div>`;
     }
   }
 };
@@ -2009,6 +2099,7 @@ const ACHIEVEMENTS = [
   { icon:'📖', name:'قارئ نهم', desc:'احفظ 25 كلمة', check:p => ((p.stats&&p.stats.words)||0) >= 25 },
   { icon:'📝', name:'مستعد للاختبار', desc:'اجتز اختبار مستوى واحد', check:p => ((p.stats&&p.stats.quizzes)||0) >= 1 },
   { icon:'🎓', name:'مستوى جديد', desc:'افتح مستوى A1', check:p => Lessons.isUnlocked('a1') },
+  { icon:'📜', name:'إتقان أول مستوى', desc:'اجتز الامتحان النهائي لأي مستوى بـ80%+', check:p => p.completedLevels && Object.keys(p.completedLevels).length >= 1 },
 ];
 
 const Achievements = {
@@ -2745,8 +2836,102 @@ const Quiz = {
 };
 
 /* ============================================================
-   ADMIN
+   FINAL EXAM — امتحان نهائي شامل لكل مستوى (مفردات + تعبيرات + أفعال مركبة)
+   عند تحقيق 80%+ بيسجل "إتقان المستوى" وبيديك ختم في جواز السفر اللغوي
    ============================================================ */
+const FinalExam = {
+  questions: [],
+  current: 0,
+  score: 0,
+
+  buildQuestions(){
+    const data = currentLevelData();
+    const vocabItems = data.vocabulary.map(w => ({ term: w.en, correctAr: w.ar, speak: w.en }));
+    const idiomItems = (data.idioms || []).map(i => ({ term: i.en, correctAr: i.ar, speak: i.en }));
+    const phrasalItems = (data.phrasalVerbs || []).map(p => ({ term: p.en, correctAr: p.ar, speak: p.en }));
+    const allItems = [...vocabItems, ...idiomItems, ...phrasalItems];
+    const allArMeanings = allItems.map(i => i.correctAr);
+    const shuffled = [...allItems].sort(() => Math.random() - 0.5).slice(0, Math.min(15, allItems.length));
+    return shuffled.map(correct => {
+      const wrongOptions = allArMeanings.filter(ar => ar !== correct.correctAr).sort(() => Math.random() - 0.5).slice(0,3);
+      const options = [...wrongOptions, correct.correctAr].sort(() => Math.random() - 0.5);
+      return { word: correct.term, correctAr: correct.correctAr, options };
+    });
+  },
+
+  start(){
+    this.questions = this.buildQuestions();
+    this.current = 0;
+    this.score = 0;
+    this.renderQuestion();
+  },
+
+  renderQuestion(){
+    const container = document.getElementById('lessonContent');
+    if(this.current >= this.questions.length){
+      this.renderResult();
+      return;
+    }
+    const q = this.questions[this.current];
+    container.innerHTML = `
+      <div class="quiz-progress">
+        <span style="font-size:13px; color:var(--muted); white-space:nowrap;">🎓 سؤال ${this.current + 1} من ${this.questions.length}</span>
+        <div class="quiz-progress-bar"><div class="quiz-progress-fill" style="width:${(this.current / this.questions.length) * 100}%"></div></div>
+      </div>
+      <div class="quiz-question">
+        <div class="q-word">${q.word}</div>
+        <button class="speak-btn" style="margin:0 auto 18px" onclick="Speech.speak('${q.word.replace(/'/g,"\\'")}','us',this)">🔊 اسمع</button>
+        <div class="quiz-options">
+          ${q.options.map(opt => `<button class="quiz-option" onclick="FinalExam.answer(this,'${opt.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
+        </div>
+      </div>`;
+  },
+
+  answer(btnEl, chosen){
+    const q = this.questions[this.current];
+    document.querySelectorAll('.quiz-option').forEach(b => b.onclick = null);
+    if(chosen === q.correctAr){ btnEl.classList.add('correct'); this.score++; }
+    else {
+      btnEl.classList.add('wrong');
+      document.querySelectorAll('.quiz-option').forEach(b => { if(b.textContent === q.correctAr) b.classList.add('correct'); });
+    }
+    setTimeout(() => { this.current++; this.renderQuestion(); }, 900);
+  },
+
+  async renderResult(){
+    const container = document.getElementById('lessonContent');
+    const percent = Math.round((this.score / this.questions.length) * 100);
+    const passed = percent >= 80;
+    const earnedXP = passed ? 30 : this.score * 2;
+    const level = Lessons.currentLevel;
+
+    container.innerHTML = `
+      <div class="quiz-result">
+        ${passed ? `<div class="stamp" style="width:110px;height:110px;font-size:20px;margin:0 auto 16px;border-color:var(--gold);color:var(--gold);border-style:solid;">${LEVELS_DATA[level].label}<span>مُتقَن ✅</span></div>` : ''}
+        <div class="score">${this.score}/${this.questions.length}</div>
+        <p style="color:var(--muted); margin-bottom:6px;">نسبة النجاح: ${percent}%</p>
+        ${passed
+          ? `<p style="color:#0e7a5c; font-weight:700; margin-bottom:20px;">🎉 مبروك! أتقنت مستوى ${LEVELS_DATA[level].label} وحصلت على ختمه في جواز سفرك اللغوي</p>`
+          : `<p style="color:var(--coral); font-weight:700; margin-bottom:20px;">محتاج ٨٠٪ على الأقل عشان تاخد ختم إتقان المستوى. ذاكر تاني وحاول من جديد!</p>`}
+        <button class="btn btn-gold" onclick="FinalExam.start()">أعد الامتحان</button>
+      </div>`;
+
+    if(State.user && isOnline()){
+      try{
+        const newXP = (State.profile.xp || 0) + earnedXP;
+        await db.ref('users/' + State.user.uid + '/xp').set(newXP);
+        State.profile.xp = newXP;
+        if(passed){
+          await db.ref('users/' + State.user.uid + '/completedLevels/' + level).set(true);
+          State.profile.completedLevels = State.profile.completedLevels || {};
+          State.profile.completedLevels[level] = true;
+        }
+        Achievements.render();
+        Leaderboard.syncMine();
+      }catch(err){ console.error(err); }
+    }
+  }
+};
 const AdminView = {
   show(tab){
     document.querySelectorAll('.admin-view').forEach(v => v.classList.add('hidden'));
