@@ -749,6 +749,9 @@ footer .credit b{color:var(--gold-soft);}
         <button class="lesson-tab" data-tab="pronunciation" onclick="Lessons.switchTab('pronunciation')">🎤 نطق</button>
         <button class="lesson-tab" data-tab="idioms" onclick="Lessons.switchTab('idioms')">💡 تعبيرات ومصطلحات</button>
         <button class="lesson-tab" data-tab="amBr" onclick="Lessons.switchTab('amBr')">🇺🇸🇬🇧 عامية وفروقات</button>
+        <button class="lesson-tab" data-tab="situations" onclick="Lessons.switchTab('situations')">🌍 مواقف حياتية وكتابة</button>
+        <button class="lesson-tab" data-tab="specialized" onclick="Lessons.switchTab('specialized')">💼 مهارات متخصصة</button>
+        <button class="lesson-tab" data-tab="shadowing" onclick="Lessons.switchTab('shadowing')">🎬 محاكاة (Shadowing)</button>
         <button class="lesson-tab" data-tab="quiz" onclick="Lessons.switchTab('quiz')">📝 اختبار المستوى</button>
       </div>
       <div id="lessonContent"></div>
@@ -1129,21 +1132,34 @@ const Auth = {
       const cred = await auth.createUserWithEmailAndPassword(email, password);
       const uid = cred.user.uid;
 
-      await db.ref('users/' + uid).set({
-        username, email,
-        createdAt: firebase.database.ServerValue.TIMESTAMP,
-        photoURL: '',
-        country: '',
-        level: 'Pre-A1',
-        stars: 0, xp: 0, streak: 0,
-        stats: { lessons:0, words:0, conversations:0, quizzes:0 },
-        learnedWords: {},
-        wrongWords: {},
-        completedLevels: {},
-        subscription: { status: 'none', codeId: null, expiresAt: null },
-        presence: { online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP }
-      });
-      await db.ref('usernames/' + username.toLowerCase()).set(uid);
+      try{
+        await db.ref('users/' + uid).set({
+          username, email,
+          createdAt: firebase.database.ServerValue.TIMESTAMP,
+          photoURL: '',
+          country: '',
+          level: 'Pre-A1',
+          stars: 0, xp: 0, streak: 0,
+          stats: { lessons:0, words:0, conversations:0, quizzes:0 },
+          learnedWords: {},
+          wrongWords: {},
+          completedLevels: {},
+          completedReading: {},
+          completedListening: {},
+          subscription: { status: 'none', codeId: null, expiresAt: null },
+          presence: { online: true, lastSeen: firebase.database.ServerValue.TIMESTAMP }
+        });
+        await db.ref('usernames/' + username.toLowerCase()).set(uid);
+      }catch(innerErr){
+        // لو أي خطوة فشلت (زي حد تاني حجز نفس الاسم في نفس اللحظة)،
+        // بنرجع نمسح الحساب والبروفايل عشان منسيبش حساب "معلّق" من غير اسم محجوز.
+        console.error(innerErr);
+        try{ await db.ref('users/' + uid).remove(); }catch(e){}
+        try{ await cred.user.delete(); }catch(e){}
+        Toast.show('حصل تعارض أثناء الإنشاء (ممكن حد حجز نفس الاسم في نفس اللحظة)، حاول تاني', 'error');
+        btn.disabled = false; btn.textContent = 'إنشاء الحساب';
+        return false;
+      }
 
       Toast.show('اتعمل الحساب بنجاح! دلوقتي فعّل اشتراكك', 'success');
       Router.go('codeGateScreen');
@@ -1303,6 +1319,9 @@ const App = {
           Router.go('landingPage');
           return;
         }
+        // مراقبة حية لحالة الحظر: لو الأدمن حظرك وانت شغال فعليًا، هيتم تسجيل خروجك فورًا
+        // من غير ما تحتاج تعمل ريفريش بنفسك.
+        this._watchBanLive();
       }
 
       if(!State.isAdmin && !Subscription.isValid(State.profile)){
@@ -1311,13 +1330,20 @@ const App = {
         return;
       }
 
+      // لو اشتراكك تجريبي وله وقت انتهاء معروف، بنجدول قفل تلقائي بالظبط وقت الانتهاء
+      // عشان متفضلش شغال بعد ما التجربة تخلص لمجرد إنك سايب التاب مفتوح.
+      if(!State.isAdmin) this._scheduleTrialExpiry();
+
       // presence
       db.ref('users/' + State.user.uid + '/presence').update({ online:true, lastSeen: firebase.database.ServerValue.TIMESTAMP });
-      db.ref('.info/connected').on('value', snap => {
-        if(snap.val() === true){
-          db.ref('users/' + State.user.uid + '/presence/online').onDisconnect().set(false);
-        }
-      });
+      if(!this._connectionWatcherActive){
+        this._connectionWatcherActive = true;
+        db.ref('.info/connected').on('value', snap => {
+          if(snap.val() === true){
+            db.ref('users/' + State.user.uid + '/presence/online').onDisconnect().set(false);
+          }
+        });
+      }
 
       this.renderDashboard();
       Progress.updateStreak();
@@ -1328,6 +1354,39 @@ const App = {
       Loading.hide();
       Toast.show('حصل خطأ في تحميل بيانات حسابك، حاول تحدّث الصفحة', 'error');
     }
+  },
+
+  // بيراقب حالة الحظر بشكل حي طول ما المستخدم فاتح التطبيق، ولو اتحظر بيسجله خروج فورًا.
+  _watchBanLive(){
+    if(this._banWatcherActive || !State.user) return;
+    this._banWatcherActive = true;
+    db.ref('bannedUsers/' + State.user.uid).on('value', async (snap) => {
+      if(snap.val() === true){
+        db.ref('bannedUsers/' + State.user.uid).off('value');
+        this._banWatcherActive = false;
+        await auth.signOut();
+        Toast.show('تم إيقاف حسابك، تواصل مع الدعم على واتساب لمعرفة السبب', 'error');
+        Router.go('landingPage');
+      }
+    });
+  },
+
+  // بيجدول قفل تلقائي بالظبط وقت ما التجربة المجانية تنتهي، عشان مستخدم سايب التاب مفتوح
+  // متفضلش عنده وصول كامل بعد ما وقتها يخلص فعليًا.
+  _scheduleTrialExpiry(){
+    if(this._trialTimer){ clearTimeout(this._trialTimer); this._trialTimer = null; }
+    const sub = State.profile && State.profile.subscription;
+    if(!sub || sub.status !== 'trial' || !sub.expiresAt) return;
+    const msLeft = sub.expiresAt - Date.now();
+    if(msLeft <= 0) return; // هيتقفل أصلًا من Subscription.isValid وقت الدخول الجاي
+    // حد أقصى معقول للـ setTimeout (لو المتبقي كبير جدًا لأي سبب) عشان نتجنب قيم غريبة
+    const capped = Math.min(msLeft, 7 * 24 * 60 * 60 * 1000);
+    this._trialTimer = setTimeout(() => {
+      if(!Subscription.isValid(State.profile)){
+        Toast.show('انتهت فترة التجربة المجانية، فعّل كود اشتراك عشان تكمل', 'error');
+        Router.go('codeGateScreen');
+      }
+    }, capped);
   },
 
   renderDashboard(){
@@ -1481,6 +1540,54 @@ const Pronunciation = {
     recognition.onend = () => {
       micBtn.classList.remove('listening');
       this.recognizing = false;
+    };
+    recognition.start();
+  }
+};
+
+/* ============================================================
+   SHADOWING — كرر الجملة كاملة فورًا وراء النطق، بتقييم تقاربي
+   (مش تطابق حرفي زي تمرين النطق للكلمة الواحدة، لأن الجمل أطول
+   وطبيعي يكون فيه اختلاف بسيط، فبنقيس نسبة تطابق الكلمات)
+   ============================================================ */
+const Shadowing = {
+  record(targetSentence, i){
+    if(!Pronunciation.supported || Pronunciation.recognizing) return;
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    const micBtn = document.getElementById('shadowMic' + i);
+    const resultEl = document.getElementById('shadowResult' + i);
+    micBtn.classList.add('listening');
+    resultEl.textContent = '🎙️ بتسمعك...';
+    resultEl.className = 'pron-result';
+    Pronunciation.recognizing = true;
+
+    recognition.onresult = (event) => {
+      const heard = event.results[0][0].transcript.trim();
+      const clean = s => s.toLowerCase().replace(/[^a-z ]/g,'').trim().split(/\s+/).filter(Boolean);
+      const targetWords = clean(targetSentence);
+      const heardWords = clean(heard);
+      const matched = targetWords.filter(w => heardWords.includes(w)).length;
+      const similarity = targetWords.length ? Math.round((matched / targetWords.length) * 100) : 0;
+      if(similarity >= 80){
+        resultEl.textContent = `✅ ممتاز! (${similarity}% تطابق) — سمعت: "${heard}"`;
+        resultEl.className = 'pron-result good';
+      } else {
+        resultEl.textContent = `🔁 (${similarity}% تطابق) سمعت: "${heard}" — جرّب تاني وركّز على كل كلمة`;
+        resultEl.className = 'pron-result bad';
+      }
+    };
+    recognition.onerror = () => {
+      resultEl.textContent = '⚠️ مش قادر أسمعك، تأكد من صلاحية المايك';
+      resultEl.className = 'pron-result bad';
+    };
+    recognition.onend = () => {
+      micBtn.classList.remove('listening');
+      Pronunciation.recognizing = false;
     };
     recognition.start();
   }
@@ -1643,7 +1750,112 @@ vocabulary: [
     { word:'كورة القدم', us:'Soccer', uk:'Football', ex:'He plays soccer every Friday.', exAr:'بيلعب كورة كل جمعة.' },
     { word:'حلوى', us:'Candy', uk:'Sweets', ex:'Kids love candy.', exAr:'الأطفال بيحبوا الحلوى.' },
     { word:'لوري', us:'Truck', uk:'Lorry', ex:'A big truck is on the road.', exAr:'فيه لوري كبير على الطريق.' },
-  ]
+  ],
+  realLifeSituations: [
+    {
+      title: 'في المطار (At the Airport)',
+      icon: '✈️',
+      phrases: [
+        { en:'Where is the check-in desk?', ar:'فين مكتب تسجيل الوصول؟' },
+        { en:'I have one bag to check in.', ar:'معايا شنطة واحدة هسجلها.' },
+        { en:'What gate is my flight?', ar:'رحلتي من بوابة إيه؟' },
+        { en:'Is this seat taken?', ar:'الكرسي ده محجوز؟' },
+      ]
+    },
+    {
+      title: 'عند الدكتور (At the Doctor)',
+      icon: '🏥',
+      phrases: [
+        { en:'I don\'t feel well.', ar:'مش حاسس إني كويس.' },
+        { en:'I have a headache.', ar:'عندي صداع.' },
+        { en:'How long have you had this pain?', ar:'من امتى وأنت حاسس بالألم ده؟' },
+        { en:'Take this medicine twice a day.', ar:'خد الدوا ده مرتين في اليوم.' },
+      ]
+    },
+    {
+      title: 'السؤال عن الاتجاهات (Asking for Directions)',
+      icon: '🧭',
+      phrases: [
+        { en:'Excuse me, where is the nearest bank?', ar:'لو سمحت، فين أقرب بنك؟' },
+        { en:'Go straight, then turn left.', ar:'امشي دغري، بعدين لف شمال.' },
+        { en:'Is it far from here?', ar:'بعيد من هنا؟' },
+        { en:'It\'s just two minutes away.', ar:'على بعد دقيقتين بس.' },
+      ]
+    },
+  ],
+  emailWriting: {
+    title: 'كتابة إيميل بسيط (Writing a Simple Email)',
+    tips: [
+      'ابدأ دايمًا بتحية: "Dear..." للرسمي أو "Hi..." للعادي.',
+      'اكتب الغرض من الإيميل في أول جملة أو اتنين.',
+      'اقفل بعبارة زي "Best regards" أو "Thank you" قبل اسمك.',
+    ],
+    example: {
+      subject: 'Subject: New Student Question',
+      body: `Dear Teacher,
+
+My name is Mahmoud. I am a new student in your class. I have a question about the schedule.
+
+What time does the class start?
+
+Thank you very much.
+
+Best regards,
+Mahmoud`,
+      bodyAr: `عزيزي الأستاذ،
+
+اسمي محمود. أنا طالب جديد في الفصل بتاعك. عندي سؤال عن الجدول.
+
+الفصل بيبدأ الساعة كام؟
+
+شكرًا جزيلًا.
+
+مع تحياتي،
+محمود`
+    }
+  },
+  specialized: {
+    business: [
+      { en:'Let\'s start the meeting.', ar:'يلا نبدأ الاجتماع.' },
+      { en:'Nice to meet you, I am the new employee.', ar:'سعيد بلقائك، أنا الموظف الجديد.' },
+      { en:'Can we schedule a call tomorrow?', ar:'ممكن نظبط مكالمة بكرة؟' },
+      { en:'I will send you the report by email.', ar:'هبعتلك التقرير بالإيميل.' },
+    ],
+    travel: [
+      { en:'I would like to book a room, please.', ar:'عايز أحجز أوضة، من فضلك.' },
+      { en:'How much is a ticket to Cairo?', ar:'التذكرة للقاهرة بكام؟' },
+      { en:'Where can I find a taxi?', ar:'فين ألاقي تاكسي؟' },
+      { en:'What time does the train leave?', ar:'القطر بيتحرك الساعة كام؟' },
+    ],
+    academic: [
+      { en:'I have a question about the lesson.', ar:'عندي سؤال عن الدرس.' },
+      { en:'Can you explain this again, please?', ar:'ممكن تشرح ده تاني، من فضلك؟' },
+      { en:'When is the exam?', ar:'الامتحان إمتى؟' },
+      { en:'I need more time to finish the homework.', ar:'محتاج وقت أكتر أخلص الواجب.' },
+    ],
+  },
+  presentationSkills: {
+    tips: [
+      'ابدأ بابتسامة وتحية بسيطة زي "Good morning everyone".',
+      'قدّم نفسك في جملة واحدة واضحة.',
+      'اتكلم ببطء ووضوح، ومتخافش تاخد نفس بين الجمل.',
+    ],
+    phrases: [
+      { en:'Good morning everyone, my name is Mahmoud.', ar:'صباح الخير للجميع، اسمي محمود.' },
+      { en:'Today I will talk about my family.', ar:'النهاردة هاتكلم عن عيلتي.' },
+      { en:'Thank you for listening.', ar:'شكرًا لاستماعكم.' },
+    ]
+  },
+  movieEnglish: {
+    title: 'مشهد من فيلم بسيط (A Simple Movie Scene)',
+    sceneDescription: 'مشهد في بيت العيلة وقت العشا — لغة الأفلام غالبًا بتكون أسرع وأقصر من اللي بنتعلمه في الكتب.',
+    lines: [
+      { en:'Dinner\'s ready!', ar:'العشا جاهز!' },
+      { en:'Coming!', ar:'جاي!' },
+      { en:'Where were you all day?', ar:'كنت فين طول اليوم؟' },
+      { en:'At school, Mom. Don\'t worry.', ar:'في المدرسة يا ماما. متقلقيش.' },
+    ]
+  }
   },
 
   'a1': {
@@ -1707,6 +1919,111 @@ vocabulary: [
         { q:'How does his job feel?', options:['Boring','Easy','Busy'], correct:'Busy' },
         { q:'Why is he happy?', options:['He is rich','He has a good job and family','He is free'], correct:'He has a good job and family' },
       ]
+    },
+    phrasalVerbs: [
+      { en:'Look for', ar:'يدوّر على', ex:'I am looking for my keys.', exAr:'باحاول أدوّر على مفاتيحي.' },
+      { en:'Look after', ar:'يعتني بـ', ex:'She looks after her little brother.', exAr:'بتعتني بأخوها الصغير.' },
+      { en:'Find out', ar:'يكتشف', ex:'I need to find out the answer.', exAr:'محتاج أعرف الإجابة.' },
+      { en:'Give up', ar:'يستسلم', ex:'Never give up on your dreams.', exAr:'متسبش أحلامك أبدًا.' },
+      { en:'Come back', ar:'يرجع', ex:'I will come back later.', exAr:'هارجع بعدين.' },
+      { en:'Pick up', ar:'يلمّ/يستلم', ex:'Can you pick up the phone?', exAr:'ممكن ترد على التليفون؟' },
+    ],
+    idioms: [
+      { en:'Piece of cake', ar:'حاجة سهلة جدًا', ex:'This exam was a piece of cake.', exAr:'الامتحان ده كان سهل جدًا.' },
+      { en:'Break a leg', ar:'بالتوفيق (تعبير حظ)', ex:'Break a leg in your interview!', exAr:'بالتوفيق في المقابلة!' },
+      { en:'It\'s up to you', ar:'الأمر ليك', ex:'Where to go? It\'s up to you.', exAr:'نروح فين؟ الأمر ليك.' },
+      { en:'Time flies', ar:'الوقت بيعدي بسرعة', ex:'Time flies when you are having fun.', exAr:'الوقت بيعدي بسرعة لما تكون مبسوط.' },
+    ],
+    slang: [
+      { en:'Kinda', ar:'نوعًا ما (اختصار kind of)', ex:'I\'m kinda tired.', exAr:'أنا تعبان نوعًا ما.', note:'للكلام العادي بس، مش للكتابة الرسمية.' },
+      { en:'Chill out', ar:'اهدى/خد راحتك', ex:'Relax, just chill out.', exAr:'ريّح، خد راحتك بس.', note:'بديل غير رسمي لـ relax.' },
+      { en:'Hang out', ar:'يقضي وقت مع أصحاب', ex:'Let\'s hang out this weekend.', exAr:'يلا نتقابل الويكند ده.', note:'شائع جدًا بين الشباب.' },
+    ],
+    amBr: [
+      { word:'زبالة', us:'Garbage', uk:'Rubbish', ex:'Take out the garbage, please.', exAr:'طلّع الزبالة، من فضلك.' },
+      { word:'بريد', us:'Mail', uk:'Post', ex:'I sent it by mail.', exAr:'بعتها بالبوستة.' },
+      { word:'جزمة رياضة', us:'Sneakers', uk:'Trainers', ex:'I need new sneakers.', exAr:'محتاج جزمة رياضة جديدة.' },
+      { word:'الخريف', us:'Fall', uk:'Autumn', ex:'I love fall weather.', exAr:'باحب جو الخريف.' },
+      { word:'فيلم', us:'Movie', uk:'Film', ex:'Let\'s watch a movie tonight.', exAr:'يلا نتفرج على فيلم الليلة.' },
+    ],
+    realLifeSituations: [
+      {
+        title: 'في البنك (At the Bank)',
+        icon: '🏦',
+        phrases: [
+          { en:'I want to open a bank account.', ar:'عايز أفتح حساب في البنك.' },
+          { en:'What is the exchange rate today?', ar:'سعر الصرف كام النهاردة؟' },
+          { en:'I need to withdraw some money.', ar:'محتاج أسحب فلوس.' },
+        ]
+      },
+      {
+        title: 'مكالمة تليفونية (Making a Phone Call)',
+        icon: '📞',
+        phrases: [
+          { en:'Hello, can I speak to Ahmed, please?', ar:'ألو، ممكن أكلم أحمد، من فضلك؟' },
+          { en:'Sorry, he is not available right now.', ar:'آسف، هو مش موجود دلوقتي.' },
+          { en:'Can I leave a message?', ar:'ممكن أسيب رسالة؟' },
+        ]
+      },
+    ],
+    emailWriting: {
+      title: 'طلب إجازة من الشغل (Requesting Leave)',
+      tips: [
+        'اذكر السبب والتاريخ المطلوب بوضوح من البداية.',
+        'كن مختصر ومباشر في الإيميلات الرسمية.',
+      ],
+      example: {
+        subject: 'Subject: Leave Request',
+        body: `Dear Manager,
+
+I would like to request one day off on Thursday for a personal reason.
+
+Please let me know if this is possible.
+
+Thank you,
+Mahmoud`,
+        bodyAr: `عزيزي المدير،
+
+عايز أطلب يوم إجازة يوم الخميس لسبب شخصي.
+
+من فضلك قولّي لو ده ممكن.
+
+شكرًا،
+محمود`
+      }
+    },
+    specialized: {
+      business: [
+        { en:'I would like to introduce our new product.', ar:'حابب أقدّم منتجنا الجديد.' },
+        { en:'What is your availability next week?', ar:'إيه مواعيدك المتاحة الأسبوع الجاي؟' },
+      ],
+      travel: [
+        { en:'Is breakfast included in the price?', ar:'الإفطار متضمن في السعر؟' },
+        { en:'Can you recommend a good restaurant nearby?', ar:'ممكن تنصحني بمطعم كويس قريب؟' },
+      ],
+      academic: [
+        { en:'Could you give me some feedback on my work?', ar:'ممكن تدّيني رأيك في شغلي؟' },
+        { en:'I would like to join the study group.', ar:'حابب أنضم لمجموعة المذاكرة.' },
+      ],
+    },
+    presentationSkills: {
+      tips: [
+        'استخدم أمثلة شخصية عشان الكلام يبقى أقرب للناس.',
+        'اختم بسؤال يفتح نقاش مع الجمهور.',
+      ],
+      phrases: [
+        { en:'Let me give you an example.', ar:'خليني أديك مثال.' },
+        { en:'Does anyone have any questions?', ar:'حد عنده أي أسئلة؟' },
+      ]
+    },
+    movieEnglish: {
+      title: 'مشهد مقابلة شغل (A Job Interview Scene)',
+      sceneDescription: 'مشهد شائع في أفلام كتير — لغة رسمية أكتر شوية من الكلام اليومي.',
+      lines: [
+        { en:'Please, have a seat.', ar:'اتفضل، اقعد.' },
+        { en:'Thank you for giving me this opportunity.', ar:'شكرًا لإعطائي الفرصة دي.' },
+        { en:'We will contact you soon.', ar:'هنتواصل معاك قريب.' },
+      ]
     }
   },
 
@@ -1766,6 +2083,109 @@ vocabulary: [
         { q:'What did he decide to do?', options:['Improve his English','Change his job','Travel abroad'], correct:'Improve his English' },
         { q:'How often did he study?', options:['Once a week','Every day','Rarely'], correct:'Every day' },
         { q:'How does he feel now?', options:['Confused','Confident','Bored'], correct:'Confident' },
+      ]
+    },
+    phrasalVerbs: [
+      { en:'Figure out', ar:'يفهم/يحل', ex:'I need to figure out this problem.', exAr:'محتاج أحل المشكلة دي.' },
+      { en:'Put off', ar:'يأجّل', ex:'Don\'t put off your work.', exAr:'متأجلش شغلك.' },
+      { en:'Come up with', ar:'يجيب فكرة', ex:'She came up with a great idea.', exAr:'جابت فكرة رائعة.' },
+      { en:'Deal with', ar:'يتعامل مع', ex:'I know how to deal with stress.', exAr:'عارف أتعامل مع الضغط إزاي.' },
+      { en:'Set up', ar:'يجهّز/ينظّم', ex:'We need to set up the meeting room.', exAr:'محتاجين نجهّز أوضة الاجتماع.' },
+      { en:'Point out', ar:'يوضّح/يشير', ex:'He pointed out an important detail.', exAr:'وضّح تفصيلة مهمة.' },
+    ],
+    idioms: [
+      { en:'Under the weather', ar:'تعبان شوية', ex:'I feel a bit under the weather today.', exAr:'حاسس إني تعبان شوية النهاردة.' },
+      { en:'Hit the books', ar:'يذاكر بجد', ex:'I need to hit the books before the exam.', exAr:'لازم أذاكر بجد قبل الامتحان.' },
+      { en:'On the same page', ar:'متفقين على نفس الفكرة', ex:'Let\'s make sure we\'re on the same page.', exAr:'يلا نتأكد إننا متفقين على نفس الفكرة.' },
+      { en:'Get the hang of it', ar:'يتقن/يعتاد على حاجة', ex:'It takes time to get the hang of it.', exAr:'بياخد وقت لحد ما تتقنها.' },
+    ],
+    slang: [
+      { en:'Legit', ar:'حقيقي/فعلاً', ex:'That was legit amazing.', exAr:'ده كان رائع فعلاً.', note:'بديل عامي لـ really/genuinely.' },
+      { en:'My bad', ar:'غلطتي', ex:'My bad, I forgot to call you.', exAr:'غلطتي، نسيت أتصل بيك.', note:'اعتذار غير رسمي سريع.' },
+      { en:'Netflix and chill', ar:'قعدة هادية في البيت', ex:'Let\'s just Netflix and chill tonight.', exAr:'يلا نقعد هادي في البيت الليلة.', note:'تعبير عامي حديث جدًا.' },
+    ],
+    amBr: [
+      { word:'الدور (الطابور)', us:'Line', uk:'Queue', ex:'Please wait in line.', exAr:'استنى في الدور من فضلك.' },
+      { word:'بنزين', us:'Gas', uk:'Petrol', ex:'We need to buy gas.', exAr:'محتاجين نشتري بنزين.' },
+      { word:'بنطلون', us:'Pants', uk:'Trousers', ex:'I bought new pants.', exAr:'اشتريت بنطلون جديد.' },
+      { word:'شقة (استوديو)', us:'Apartment', uk:'Flat', ex:'It\'s a nice apartment.', exAr:'شقة حلوة.' },
+    ],
+    realLifeSituations: [
+      {
+        title: 'مقابلة شغل تفصيلية (A Detailed Job Interview)',
+        icon: '💼',
+        phrases: [
+          { en:'Tell me about your strengths and weaknesses.', ar:'قولّي عن نقاط قوتك وضعفك.' },
+          { en:'Where do you see yourself in five years?', ar:'هتكون فين بعد 5 سنين؟' },
+          { en:'Do you have any questions for us?', ar:'عندك أي أسئلة لينا؟' },
+        ]
+      },
+      {
+        title: 'حجز موعد (Booking an Appointment)',
+        icon: '📅',
+        phrases: [
+          { en:'I would like to book an appointment.', ar:'عايز أحجز ميعاد.' },
+          { en:'Is there any availability this week?', ar:'فيه مواعيد متاحة الأسبوع ده؟' },
+        ]
+      },
+    ],
+    emailWriting: {
+      title: 'إيميل تقديم على وظيفة (A Job Application Email)',
+      tips: [
+        'اذكر الوظيفة اللي بتقدّم عليها من أول جملة.',
+        'اربط خبرتك بمتطلبات الوظيفة في جملتين.',
+      ],
+      example: {
+        subject: 'Subject: Application for Marketing Position',
+        body: `Dear Hiring Manager,
+
+I am writing to apply for the Marketing position I saw on your website. I have two years of experience in this field and I believe I can contribute to your team.
+
+I have attached my CV for your review.
+
+Best regards,
+Mahmoud`,
+        bodyAr: `عزيزي مسؤول التوظيف،
+
+بكتب عشان أقدّم على وظيفة التسويق اللي شفتها على موقعكم. عندي سنتين خبرة في المجال ده وبعتقد إني أقدر أضيف للفريق.
+
+مرفق سيرتي الذاتية للمراجعة.
+
+مع تحياتي،
+محمود`
+      }
+    },
+    specialized: {
+      business: [
+        { en:'We need to finalize the budget by Friday.', ar:'لازم نخلّص الميزانية بحلول الجمعة.' },
+        { en:'Let\'s discuss the next steps.', ar:'يلا نناقش الخطوات الجاية.' },
+      ],
+      travel: [
+        { en:'My flight got delayed for two hours.', ar:'رحلتي اتأخرت ساعتين.' },
+        { en:'Could you recommend some tourist attractions?', ar:'ممكن تنصحني بأماكن سياحية؟' },
+      ],
+      academic: [
+        { en:'I disagree with this argument for a few reasons.', ar:'مش متفق مع الرأي ده لأسباب كذا.' },
+        { en:'This research supports my hypothesis.', ar:'البحث ده بيدعم فرضيتي.' },
+      ],
+    },
+    presentationSkills: {
+      tips: [
+        'استخدم بيانات أو أرقام بسيطة عشان كلامك يبقى مقنع أكتر.',
+        'اتوقف شوية بعد نقطة مهمة عشان تدّي الجمهور وقت يستوعب.',
+      ],
+      phrases: [
+        { en:'According to recent studies...', ar:'وفقًا لدراسات حديثة...' },
+        { en:'To sum up, the main point is...', ar:'وفي الخلاصة، النقطة الأساسية هي...' },
+      ]
+    },
+    movieEnglish: {
+      title: 'مشهد شجار بسيط (A Simple Argument Scene)',
+      sceneDescription: 'مشهد شائع في المسلسلات — نبرة الصوت مهمة قد أهمية الكلمات.',
+      lines: [
+        { en:'You never listen to me!', ar:'إنت مبتسمعنيش خالص!' },
+        { en:'That\'s not fair, I always try.', ar:'ده مش عدل، أنا دايمًا بحاول.' },
+        { en:'Let\'s just calm down and talk.', ar:'يلا بس نهدى ونتكلم.' },
       ]
     }
   },
@@ -1913,6 +2333,14 @@ const Lessons = {
       const b1Keys = LEVELS_DATA['b1'].vocabulary.map(w => Progress.keyFor(w.en));
       return b1Keys.filter(k => learned[k]).length >= 5;
     }
+    // أي مستوى تاني يتضاف بعد كده (زي C1/C2) بيتفتح بشرط إتقان المستوى اللي قبله
+    // (اجتياز الامتحان النهائي بتاعه)، عشان مايفضلش مقفول للأبد لمجرد إنه مش من المستويات المعروفة هنا.
+    const order = Object.keys(LEVELS_DATA);
+    const idx = order.indexOf(levelKey);
+    if(idx > 0){
+      const prevLevel = order[idx - 1];
+      return !!(State.profile && State.profile.completedLevels && State.profile.completedLevels[prevLevel]);
+    }
     return false;
   },
   switchLevel(levelKey){
@@ -2028,7 +2456,7 @@ const Lessons = {
           <div class="reading-q">
             <div class="q-text">${i+1}. ${q.q}</div>
             <div class="quiz-options">
-              ${q.options.map(opt => `<button class="quiz-option" onclick="ReadingEx.answer(this,'${opt.replace(/'/g,"\\'")}','${q.correct.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
+              ${q.options.map((opt,oi) => `<button class="quiz-option" data-idx="${oi}" onclick="ReadingEx.answer(this,${oi},${q.options.indexOf(q.correct)},${i})">${escapeHTML(opt)}</button>`).join('')}
             </div>
           </div>
         `).join('')}`;
@@ -2117,6 +2545,108 @@ const Lessons = {
             </div>` : ''}
         `;
       }
+    } else if(this.currentTab === 'situations'){
+      const data = currentLevelData();
+      const hasContent = (data.realLifeSituations && data.realLifeSituations.length) || data.emailWriting;
+      if(!hasContent){
+        container.innerHTML = `<div class="trial-note">مواقف حياتية ومهارات كتابة مستوى ${data.label} لسه بتتضاف في الجلسات الجاية 🚧</div>`;
+      } else {
+        container.innerHTML = `
+          ${data.realLifeSituations && data.realLifeSituations.length ? `
+            <div class="lesson-section-title">🌍 مواقف حياتية واقعية</div>
+            ${data.realLifeSituations.map(sit => `
+              <div class="conversation-card">
+                <h4>${sit.icon} ${sit.title}</h4>
+                ${sit.phrases.map(p => `
+                  <div class="dialogue-line">
+                    <button class="speak-btn" onclick="Speech.speak('${p.en.replace(/'/g,"\\'")}','us',this)">🔊</button>
+                    <div class="dialogue-bubble">
+                      <div class="dialogue-en">${p.en}</div>
+                      <div class="dialogue-ar">${p.ar}</div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+            `).join('')}` : ''}
+          ${data.emailWriting ? `
+            <div class="lesson-section-title">✉️ ${data.emailWriting.title}</div>
+            <div class="grammar-card">
+              <p style="margin-bottom:14px;">${data.emailWriting.tips.map(t => `• ${t}`).join('<br>')}</p>
+              <div class="grammar-examples" style="text-align:right; white-space:pre-line; line-height:1.9;">
+                <div style="font-weight:700; margin-bottom:6px;">${data.emailWriting.example.subject}</div>
+                <div style="font-family:var(--font-display);">${data.emailWriting.example.body}</div>
+                <div style="border-top:1px dashed var(--border); margin-top:14px; padding-top:14px; color:var(--muted); font-size:13px;">${data.emailWriting.example.bodyAr}</div>
+              </div>
+            </div>` : ''}
+        `;
+      }
+    } else if(this.currentTab === 'specialized'){
+      const data = currentLevelData();
+      const hasContent = data.specialized || data.presentationSkills || data.movieEnglish;
+      if(!hasContent){
+        container.innerHTML = `<div class="trial-note">مهارات متخصصة لمستوى ${data.label} لسه بتتضاف في الجلسات الجاية 🚧</div>`;
+      } else {
+        const sec = (titleText, items) => !items ? '' : `
+          <div class="lesson-section-title">${titleText}</div>
+          <div class="word-grid">
+            ${items.map(p => `
+              <div class="word-card">
+                <div class="word-example" style="border-top:none; padding-top:0;"><span class="en">"${p.en}"</span><br>${p.ar}</div>
+                <button class="speak-btn" style="margin-top:12px" onclick="Speech.speak('${p.en.replace(/'/g,"\\'")}','us',this)">🔊 US</button>
+              </div>
+            `).join('')}
+          </div>`;
+        container.innerHTML = `
+          ${data.specialized ? sec('💼 إنجليزي الأعمال (Business)', data.specialized.business) : ''}
+          ${data.specialized ? sec('✈️ إنجليزي السفر (Travel)', data.specialized.travel) : ''}
+          ${data.specialized ? sec('🎓 إنجليزي أكاديمي (Academic)', data.specialized.academic) : ''}
+          ${data.presentationSkills ? `
+            <div class="lesson-section-title">🎤 مهارات العرض والتقديم (Presentation Skills)</div>
+            <div class="grammar-card">
+              <p style="margin-bottom:14px;">${data.presentationSkills.tips.map(t => `• ${t}`).join('<br>')}</p>
+              <div class="grammar-examples">
+                ${data.presentationSkills.phrases.map(p => `
+                  <div class="grammar-example-row">
+                    <button class="speak-btn" onclick="Speech.speak('${p.en.replace(/'/g,"\\'")}','us',this)">🔊</button>
+                    <span class="en">${p.en}</span><span class="ar">${p.ar}</span>
+                  </div>
+                `).join('')}
+              </div>
+            </div>` : ''}
+          ${data.movieEnglish ? `
+            <div class="lesson-section-title">🎬 ${data.movieEnglish.title}</div>
+            <div class="conversation-card">
+              <p style="color:var(--muted); font-size:13px; margin-bottom:14px;">${data.movieEnglish.sceneDescription}</p>
+              ${data.movieEnglish.lines.map(l => `
+                <div class="dialogue-line">
+                  <button class="speak-btn" onclick="Speech.speak('${l.en.replace(/'/g,"\\'")}','us',this)">🔊</button>
+                  <div class="dialogue-bubble"><div class="dialogue-en">${l.en}</div><div class="dialogue-ar">${l.ar}</div></div>
+                </div>
+              `).join('')}
+            </div>` : ''}
+        `;
+      }
+    } else if(this.currentTab === 'shadowing'){
+      const data = currentLevelData();
+      const sentences = data.listening || [];
+      if(!sentences.length){
+        container.innerHTML = `<div class="trial-note">تمارين المحاكاة لمستوى ${data.label} لسه بتتضاف 🚧</div>`;
+      } else {
+        container.innerHTML = `
+          <div class="lesson-section-title">🎬 محاكاة (Shadowing) — اسمع، كرر فورًا وراه، وقيّم نفسك</div>
+          <div class="trial-note">الطريقة: دوس 🔊 اسمع، وبعدها على طول دوس المايك وكرر الجملة بنفس السرعة والنغمة قد ما تقدر.</div>
+          ${sentences.map((s, i) => `
+            <div class="pron-card">
+              <div class="pron-word" style="font-size:19px;">${s.en}</div>
+              <div class="pron-phonetic">${s.ar}</div>
+              <div class="pron-controls">
+                <button class="speak-btn" onclick="Speech.speak('${s.en.replace(/'/g,"\\'")}','us',this)">🔊 اسمع</button>
+                <button class="mic-btn" id="shadowMic${i}" onclick="Shadowing.record('${s.en.replace(/'/g,"\\'")}', ${i})">🎙️</button>
+              </div>
+              <div class="pron-result" id="shadowResult${i}"></div>
+            </div>
+          `).join('')}`;
+      }
     } else if(this.currentTab === 'quiz'){
       container.innerHTML = `
         <div class="challenge-card">
@@ -2125,8 +2655,9 @@ const Lessons = {
           <div style="display:flex; gap:12px; justify-content:center; flex-wrap:wrap;">
             <button class="btn btn-teal" onclick="Quiz.start()">⚡ اختبار سريع (8 أسئلة مفردات)</button>
             <button class="btn btn-gold" onclick="FinalExam.start()">🎓 الامتحان النهائي الشامل (15 سؤال)</button>
+            <button class="btn btn-dark" onclick="WeeklyReview.start()">📅 مراجعة شاملة (كل المستويات المفتوحة)</button>
           </div>
-          <p style="color:var(--muted-2); font-size:12px; margin-top:16px;">الامتحان النهائي بيغطي المفردات والتعبيرات والأفعال المركبة مع بعض، ولازم ٨٠٪ عشان تاخد ختم إتقان المستوى 🏅</p>
+          <p style="color:var(--muted-2); font-size:12px; margin-top:16px;">الامتحان النهائي بيغطي المفردات والتعبيرات والأفعال المركبة مع بعض، ولازم ٨٠٪ عشان تاخد ختم إتقان المستوى 🏅. المراجعة الشاملة بترجّعلك كلمات من كل المستويات اللي فتحتها لحد دلوقتي عشان متنساش القديم.</p>
         </div>`;
     }
   }
@@ -2137,7 +2668,7 @@ const Lessons = {
    ============================================================ */
 const ListeningEx = {
   normalize(s){ return s.trim().toLowerCase().replace(/[.,!?]/g,''); },
-  check(i){
+  async check(i){
     const item = currentLevelData().listening[i];
     const input = document.getElementById('dictInput' + i);
     const feedback = document.getElementById('dictFeedback' + i);
@@ -2148,6 +2679,22 @@ const ListeningEx = {
     if(isCorrect){
       feedback.classList.add('correct');
       feedback.textContent = '✅ صح! ' + item.ar;
+      // نفس فكرة تمرين القراءة: +2 XP أول مرة بس يجاوب صح على الجملة دي.
+      if(isOnline() && State.user){
+        const key = Lessons.currentLevel + '_' + i;
+        const done = (State.profile.completedListening) || {};
+        if(!done[key]){
+          try{
+            const newXP = (State.profile.xp || 0) + 2;
+            await db.ref('users/' + State.user.uid).update({ ['completedListening/' + key]: true, xp: newXP });
+            State.profile.completedListening = done;
+            State.profile.completedListening[key] = true;
+            State.profile.xp = newXP;
+            const el = document.getElementById('statXP');
+            if(el) el.textContent = newXP;
+          }catch(err){ console.error(err); }
+        }
+      }
     } else {
       feedback.classList.add('wrong');
       feedback.textContent = `❌ مش لسه، الجملة الصح: "${item.en}" (${item.ar})`;
@@ -2159,14 +2706,32 @@ const ListeningEx = {
    READING — تصحيح أسئلة الفهم
    ============================================================ */
 const ReadingEx = {
-  answer(btnEl, chosen, correct){
+  async answer(btnEl, chosenIndex, correctIndex, qIndex){
     const group = btnEl.closest('.reading-q').querySelectorAll('.quiz-option');
     group.forEach(b => { b.onclick = null; });
-    if(chosen === correct){
+    const wasCorrect = chosenIndex === correctIndex;
+    if(wasCorrect){
       btnEl.classList.add('correct');
     } else {
       btnEl.classList.add('wrong');
-      group.forEach(b => { if(b.textContent === correct) b.classList.add('correct'); });
+      group.forEach(b => { if(Number(b.dataset.idx) === correctIndex) b.classList.add('correct'); });
+    }
+    // بنديله +2 XP أول مرة بس يجاوب صح على السؤال ده بالظبط، عشان مايكررش نفس النقاط
+    // كل مرة يفتح الصفحة، وعشان تمرين القراءة يبقى ليه فايدة زي باقي التمارين.
+    if(wasCorrect && isOnline() && State.user){
+      const key = Lessons.currentLevel + '_' + qIndex;
+      const done = (State.profile.completedReading) || {};
+      if(!done[key]){
+        try{
+          const newXP = (State.profile.xp || 0) + 2;
+          await db.ref('users/' + State.user.uid).update({ ['completedReading/' + key]: true, xp: newXP });
+          State.profile.completedReading = done;
+          State.profile.completedReading[key] = true;
+          State.profile.xp = newXP;
+          const el = document.getElementById('statXP');
+          if(el) el.textContent = newXP;
+        }catch(err){ console.error(err); }
+      }
     }
   }
 };
@@ -2234,8 +2799,29 @@ const Profile = {
     const photoURL = document.getElementById('editPhoto').value.trim();
     if(username.length < 3){ Toast.show('اسم المستخدم لازم يكون 3 أحرف على الأقل', 'error'); return; }
     if(!isOnline()){ Toast.show('مفيش اتصال بالإنترنت', 'error'); return; }
+
+    const oldUsername = State.profile.username || '';
+    const usernameChanged = username.toLowerCase() !== oldUsername.toLowerCase();
+
     try{
+      if(usernameChanged){
+        // نتأكد إن الاسم الجديد فاضي قبل ما نحجزه، عشان منسمحش بتكرار الأسماء
+        const check = await db.ref('usernames/' + username.toLowerCase()).get();
+        if(check.exists()){
+          Toast.show('اسم المستخدم ده محجوز، جرّب اسم تاني', 'error');
+          return;
+        }
+        // نحجز الاسم الجديد الأول
+        await db.ref('usernames/' + username.toLowerCase()).set(State.user.uid);
+      }
+
       await db.ref('users/' + State.user.uid).update({ username, country, photoURL });
+
+      // بعد ما التحديث نجح، نفضي حجز الاسم القديم (لو اتغيّر) عشان يبقى متاح لحد تاني
+      if(usernameChanged && oldUsername){
+        try{ await db.ref('usernames/' + oldUsername.toLowerCase()).remove(); }catch(cleanupErr){ console.error(cleanupErr); }
+      }
+
       State.profile.username = username;
       State.profile.country = country;
       State.profile.photoURL = photoURL;
@@ -2405,7 +2991,8 @@ const DailyChallenge = {
     return shuffled.map(correct => {
       const wrongOptions = pool.filter(w => w.en !== correct.en).sort(() => Math.random() - 0.5).slice(0,3);
       const options = [...wrongOptions, correct].sort(() => Math.random() - 0.5);
-      return { word: correct.en, correctAr: correct.ar, options: options.map(o => o.ar) };
+      const correctIndex = options.indexOf(correct);
+      return { word: correct.en, correctAr: correct.ar, correctIndex, options: options.map(o => o.ar) };
     });
   },
 
@@ -2462,18 +3049,18 @@ const DailyChallenge = {
         <div class="q-word">${q.word}</div>
         <button class="speak-btn" style="margin:0 auto 18px" onclick="Speech.speak('${q.word.replace(/'/g,"\\'")}','us',this)">🔊 اسمع الكلمة</button>
         <div class="quiz-options">
-          ${q.options.map(opt => `<button class="quiz-option" onclick="DailyChallenge.answer(this,'${opt.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
+          ${q.options.map((opt,i) => `<button class="quiz-option" data-idx="${i}" onclick="DailyChallenge.answer(this,${i})">${escapeHTML(opt)}</button>`).join('')}
         </div>
       </div>`;
   },
 
-  answer(btnEl, chosen){
+  answer(btnEl, chosenIndex){
     const q = this.questions[this.current];
     document.querySelectorAll('.quiz-option').forEach(b => b.onclick = null);
-    if(chosen === q.correctAr){ btnEl.classList.add('correct'); this.score++; }
+    if(chosenIndex === q.correctIndex){ btnEl.classList.add('correct'); this.score++; }
     else {
       btnEl.classList.add('wrong');
-      document.querySelectorAll('.quiz-option').forEach(b => { if(b.textContent === q.correctAr) b.classList.add('correct'); });
+      document.querySelectorAll('.quiz-option').forEach(b => { if(Number(b.dataset.idx) === q.correctIndex) b.classList.add('correct'); });
     }
     setTimeout(() => { this.current++; this.renderQuestion(); }, 800);
   },
@@ -2542,7 +3129,8 @@ const Duel = {
     return shuffled.map(correct => {
       const wrongOptions = pool.filter(w => w.en !== correct.en).sort(() => Math.random() - 0.5).slice(0,3);
       const options = [...wrongOptions, correct].sort(() => Math.random() - 0.5);
-      return { word: correct.en, correctAr: correct.ar, options: options.map(o => o.ar) };
+      const correctIndex = options.indexOf(correct);
+      return { word: correct.en, correctAr: correct.ar, correctIndex, options: options.map(o => o.ar) };
     });
   },
 
@@ -2563,9 +3151,17 @@ const Duel = {
 
   async create(){
     if(!isOnline()){ Toast.show('مفيش اتصال بالإنترنت', 'error'); return; }
-    const code = this.genCode();
     const questions = this.buildQuestions();
     try{
+      // بنولّد كود ونتأكد إنه مش مستخدم قبل ما نكتب فوقه، عشان منمسحش تحدي حد تاني بالغلط.
+      let code = this.genCode();
+      let attempts = 0;
+      while(attempts < 5){
+        const existing = await db.ref('duels/' + code).get();
+        if(!existing.exists()) break;
+        code = this.genCode();
+        attempts++;
+      }
       await db.ref('duels/' + code).set({
         hostUid: State.user.uid,
         hostUsername: State.profile.username,
@@ -2592,16 +3188,29 @@ const Duel = {
     if(!code){ Toast.show('اكتب الكود الأول', 'error'); return; }
     if(!isOnline()){ Toast.show('مفيش اتصال بالإنترنت', 'error'); return; }
     try{
-      const snap = await db.ref('duels/' + code).get();
-      if(!snap.exists()){ Toast.show('الكود ده مش موجود', 'error'); return; }
-      const duel = snap.val();
-      if(duel.guestUid){ Toast.show('التحدي ده مكتمل بالفعل', 'error'); return; }
-      if(duel.hostUid === State.user.uid){ Toast.show('متقدرش تنضم لتحدي عملته إنت', 'error'); return; }
-      await db.ref('duels/' + code).update({
-        guestUid: State.user.uid,
-        guestUsername: State.profile.username,
-        status: 'active'
+      const duelRef = db.ref('duels/' + code);
+      // بنستخدم transaction عشان لو اتنين ضغطوا "انضم" في نفس اللحظة بالظبط،
+      // واحد بس ياخد مكان الضيف والتاني ياخد رسالة واضحة إن التحدي اتاخد.
+      const result = await duelRef.transaction(duel => {
+        if(duel === null) return duel; // الكود مش موجود، هنتأكد بعدين
+        if(duel.guestUid) return; // إلغاء العملية، التحدي مكتمل بالفعل
+        if(duel.hostUid === State.user.uid) return; // إلغاء العملية، متقدرش تنضم لتحدي عملته إنت
+        duel.guestUid = State.user.uid;
+        duel.guestUsername = State.profile.username;
+        duel.status = 'active';
+        return duel;
       });
+
+      if(!result.committed){
+        const snap = await duelRef.get();
+        if(!snap.exists()){ Toast.show('الكود ده مش موجود', 'error'); return; }
+        const duel = snap.val();
+        if(duel.hostUid === State.user.uid){ Toast.show('متقدرش تنضم لتحدي عملته إنت', 'error'); return; }
+        Toast.show('التحدي ده مكتمل بالفعل', 'error');
+        return;
+      }
+      if(!result.snapshot.exists()){ Toast.show('الكود ده مش موجود', 'error'); return; }
+
       this.myRole = 'guest';
       this.listenTo(code);
     }catch(err){
@@ -2693,18 +3302,18 @@ const Duel = {
         <div class="q-word">${q.word}</div>
         <button class="speak-btn" style="margin:0 auto 18px" onclick="Speech.speak('${q.word.replace(/'/g,"\\'")}','us',this)">🔊 اسمع الكلمة</button>
         <div class="quiz-options">
-          ${q.options.map(opt => `<button class="quiz-option" onclick="Duel.answer(this,'${opt.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
+          ${q.options.map((opt,i) => `<button class="quiz-option" data-idx="${i}" onclick="Duel.answer(this,${i})">${escapeHTML(opt)}</button>`).join('')}
         </div>
       </div>`;
   },
 
-  answer(btnEl, chosen){
+  answer(btnEl, chosenIndex){
     const q = this.questions[this.current];
     document.querySelectorAll('.quiz-option').forEach(b => b.onclick = null);
-    if(chosen === q.correctAr){ btnEl.classList.add('correct'); this.score++; }
+    if(chosenIndex === q.correctIndex){ btnEl.classList.add('correct'); this.score++; }
     else {
       btnEl.classList.add('wrong');
-      document.querySelectorAll('.quiz-option').forEach(b => { if(b.textContent === q.correctAr) b.classList.add('correct'); });
+      document.querySelectorAll('.quiz-option').forEach(b => { if(Number(b.dataset.idx) === q.correctIndex) b.classList.add('correct'); });
     }
     setTimeout(() => { this.current++; this.renderQuestion(); }, 700);
   },
@@ -3009,7 +3618,10 @@ const Quiz = {
     return chosen.map(correct => {
       const wrongOptions = pool.filter(w => w.en !== correct.en).sort(() => Math.random() - 0.5).slice(0,3);
       const options = [...wrongOptions, correct].sort(() => Math.random() - 0.5);
-      return { word: correct.en, correctAr: correct.ar, options: options.map(o => o.ar) };
+      // بنحسب مكان الإجابة الصح بالـ index مش بمطابقة النص، عشان لو اتنين كلمتين مختلفتين
+      // بالصدفة ليهم نفس المعنى بالعربي، النظام يفضل يعرف بالظبط انت دوست على أنهي زرار.
+      const correctIndex = options.indexOf(correct);
+      return { word: correct.en, correctAr: correct.ar, correctIndex, options: options.map(o => o.ar) };
     });
   },
 
@@ -3037,23 +3649,23 @@ const Quiz = {
         <button class="speak-btn" style="margin:0 auto 18px" onclick="Speech.speak('${q.word.replace(/'/g,"\\'")}','us',this)">🔊 اسمع الكلمة</button>
         <div class="q-hint">اختار المعنى الصح بالعربي</div>
         <div class="quiz-options">
-          ${q.options.map(opt => `<button class="quiz-option" onclick="Quiz.answer(this,'${opt.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
+          ${q.options.map((opt,i) => `<button class="quiz-option" data-idx="${i}" onclick="Quiz.answer(this,${i})">${escapeHTML(opt)}</button>`).join('')}
         </div>
       </div>`;
   },
 
-  answer(btnEl, chosen){
+  answer(btnEl, chosenIndex){
     const q = this.questions[this.current];
     const allOptions = document.querySelectorAll('.quiz-option');
     allOptions.forEach(b => b.onclick = null);
-    const wasCorrect = chosen === q.correctAr;
+    const wasCorrect = chosenIndex === q.correctIndex;
     Progress.recordAnswer(q.word, wasCorrect);
     if(wasCorrect){
       btnEl.classList.add('correct');
       this.score++;
     } else {
       btnEl.classList.add('wrong');
-      allOptions.forEach(b => { if(b.textContent === q.correctAr) b.classList.add('correct'); });
+      allOptions.forEach(b => { if(Number(b.dataset.idx) === q.correctIndex) b.classList.add('correct'); });
     }
     setTimeout(() => { this.current++; this.renderQuestion(); }, 900);
   },
@@ -3106,7 +3718,8 @@ const FinalExam = {
     return shuffled.map(correct => {
       const wrongOptions = allArMeanings.filter(ar => ar !== correct.correctAr).sort(() => Math.random() - 0.5).slice(0,3);
       const options = [...wrongOptions, correct.correctAr].sort(() => Math.random() - 0.5);
-      return { word: correct.term, correctAr: correct.correctAr, options };
+      const correctIndex = options.indexOf(correct.correctAr);
+      return { word: correct.term, correctAr: correct.correctAr, correctIndex, options };
     });
   },
 
@@ -3133,18 +3746,18 @@ const FinalExam = {
         <div class="q-word">${q.word}</div>
         <button class="speak-btn" style="margin:0 auto 18px" onclick="Speech.speak('${q.word.replace(/'/g,"\\'")}','us',this)">🔊 اسمع</button>
         <div class="quiz-options">
-          ${q.options.map(opt => `<button class="quiz-option" onclick="FinalExam.answer(this,'${opt.replace(/'/g,"\\'")}')">${opt}</button>`).join('')}
+          ${q.options.map((opt,i) => `<button class="quiz-option" data-idx="${i}" onclick="FinalExam.answer(this,${i})">${escapeHTML(opt)}</button>`).join('')}
         </div>
       </div>`;
   },
 
-  answer(btnEl, chosen){
+  answer(btnEl, chosenIndex){
     const q = this.questions[this.current];
     document.querySelectorAll('.quiz-option').forEach(b => b.onclick = null);
-    if(chosen === q.correctAr){ btnEl.classList.add('correct'); this.score++; }
+    if(chosenIndex === q.correctIndex){ btnEl.classList.add('correct'); this.score++; }
     else {
       btnEl.classList.add('wrong');
-      document.querySelectorAll('.quiz-option').forEach(b => { if(b.textContent === q.correctAr) b.classList.add('correct'); });
+      document.querySelectorAll('.quiz-option').forEach(b => { if(Number(b.dataset.idx) === q.correctIndex) b.classList.add('correct'); });
     }
     setTimeout(() => { this.current++; this.renderQuestion(); }, 900);
   },
@@ -3183,6 +3796,93 @@ const FinalExam = {
     }
   }
 };
+
+/* ============================================================
+   WEEKLY REVIEW — مراجعة شاملة تجمع كلمات من كل المستويات المفتوحة
+   (مش مرتبطة بمستوى واحد زي الامتحان النهائي، الهدف إنك ماتنساش القديم)
+   ============================================================ */
+const WeeklyReview = {
+  questions: [],
+  current: 0,
+  score: 0,
+
+  buildQuestions(){
+    const unlockedLevels = Object.keys(LEVELS_DATA).filter(k => Lessons.isUnlocked(k));
+    const pool = unlockedLevels.flatMap(k => LEVELS_DATA[k].vocabulary.map(w => Object.assign({}, w, { levelLabel: LEVELS_DATA[k].label })));
+    const allAr = pool.map(w => w.ar);
+    const shuffled = [...pool].sort(() => Math.random() - 0.5).slice(0, Math.min(12, pool.length));
+    return shuffled.map(correct => {
+      const wrongOptions = allAr.filter(ar => ar !== correct.ar).sort(() => Math.random() - 0.5).slice(0,3);
+      const options = [...wrongOptions, correct.ar].sort(() => Math.random() - 0.5);
+      const correctIndex = options.indexOf(correct.ar);
+      return { word: correct.en, levelLabel: correct.levelLabel, correctIndex, options };
+    });
+  },
+
+  start(){
+    this.questions = this.buildQuestions();
+    if(this.questions.length === 0){
+      Toast.show('مفيش كلمات كفاية للمراجعة لسه، كمّل تعلم أكتر الأول', 'error');
+      return;
+    }
+    this.current = 0;
+    this.score = 0;
+    this.renderQuestion();
+  },
+
+  renderQuestion(){
+    const container = document.getElementById('lessonContent');
+    if(this.current >= this.questions.length){
+      this.renderResult();
+      return;
+    }
+    const q = this.questions[this.current];
+    container.innerHTML = `
+      <div class="quiz-progress">
+        <span style="font-size:13px; color:var(--muted); white-space:nowrap;">📅 سؤال ${this.current + 1} من ${this.questions.length} — ${q.levelLabel}</span>
+        <div class="quiz-progress-bar"><div class="quiz-progress-fill" style="width:${(this.current / this.questions.length) * 100}%"></div></div>
+      </div>
+      <div class="quiz-question">
+        <div class="q-word">${q.word}</div>
+        <button class="speak-btn" style="margin:0 auto 18px" onclick="Speech.speak('${q.word.replace(/'/g,"\\'")}','us',this)">🔊 اسمع</button>
+        <div class="quiz-options">
+          ${q.options.map((opt,i) => `<button class="quiz-option" data-idx="${i}" onclick="WeeklyReview.answer(this,${i})">${escapeHTML(opt)}</button>`).join('')}
+        </div>
+      </div>`;
+  },
+
+  answer(btnEl, chosenIndex){
+    const q = this.questions[this.current];
+    document.querySelectorAll('.quiz-option').forEach(b => b.onclick = null);
+    if(chosenIndex === q.correctIndex){ btnEl.classList.add('correct'); this.score++; }
+    else {
+      btnEl.classList.add('wrong');
+      document.querySelectorAll('.quiz-option').forEach(b => { if(Number(b.dataset.idx) === q.correctIndex) b.classList.add('correct'); });
+    }
+    setTimeout(() => { this.current++; this.renderQuestion(); }, 800);
+  },
+
+  async renderResult(){
+    const container = document.getElementById('lessonContent');
+    const earnedXP = this.score * 2;
+    container.innerHTML = `
+      <div class="quiz-result">
+        <div class="score">${this.score}/${this.questions.length}</div>
+        <p style="color:var(--teal); font-weight:700; margin-bottom:20px;">+${earnedXP} XP 🎉 مراجعة كويسة!</p>
+        <button class="btn btn-dark" onclick="WeeklyReview.start()">مراجعة تانية</button>
+      </div>`;
+    if(State.user && isOnline() && earnedXP > 0){
+      try{
+        const newXP = (State.profile.xp || 0) + earnedXP;
+        await db.ref('users/' + State.user.uid + '/xp').set(newXP);
+        State.profile.xp = newXP;
+        Achievements.render();
+        Leaderboard.syncMine();
+      }catch(err){ console.error(err); }
+    }
+  }
+};
+
 const AdminView = {
   show(tab){
     document.querySelectorAll('.admin-view').forEach(v => v.classList.add('hidden'));
