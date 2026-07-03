@@ -984,6 +984,14 @@ const State = {
 /* ============================================================
    UTILITIES: Toast / Loading / Device ID / Error messages
    ============================================================ */
+// دالة عامة لتنظيف أي نص جاي من مستخدم قبل ما يتحط جوه innerHTML،
+// عشان نمنع أي حد يسجل اسم مستخدم فيه كود HTML/JS يشتغل عند حد تاني (XSS).
+function escapeHTML(str){
+  const div = document.createElement('div');
+  div.textContent = (str === null || str === undefined) ? '' : String(str);
+  return div.innerHTML;
+}
+
 const Toast = {
   show(message, type = 'info'){
     const el = document.createElement('div');
@@ -1282,6 +1290,9 @@ const App = {
       const adminSnap = await db.ref('admins/' + State.user.uid).get();
       State.isAdmin = adminSnap.exists() && adminSnap.val() === true;
       document.getElementById('navAdmin').classList.toggle('hidden', !State.isAdmin);
+      // نعيد تقييم شاشة الصيانة دلوقتي بعد ما بقينا عارفين فعليًا إنك أدمن ولا لأ،
+      // عشان الأدمن ميفضلش واقف ورا شاشة الصيانة لو دخل والوضع شغال.
+      if(typeof applyMaintenanceState === 'function') applyMaintenanceState();
 
       if(!State.isAdmin){
         const bannedSnap = await db.ref('bannedUsers/' + State.user.uid).get();
@@ -1356,7 +1367,7 @@ const AppView = {
     document.querySelectorAll('#appSidebar .nav-item').forEach(n => n.classList.remove('active'));
     if(name === 'home'){
       document.getElementById('navHome').classList.add('active');
-      document.getElementById('appTopbarTitle').innerHTML = `أهلاً بيك، <span id="topbarName">${State.profile ? State.profile.username : '—'}</span> 👋`;
+      document.getElementById('appTopbarTitle').innerHTML = `أهلاً بيك، <span id="topbarName">${State.profile ? escapeHTML(State.profile.username) : '—'}</span> 👋`;
       Achievements.render();
     }
     if(name === 'lessons'){
@@ -2260,8 +2271,8 @@ const Community = {
       const time = msg.createdAt ? new Date(msg.createdAt).toLocaleTimeString('ar-EG', { hour:'2-digit', minute:'2-digit' }) : '';
       const div = document.createElement('div');
       div.className = 'chat-msg' + (mine ? ' mine' : '');
-      const reportBtn = mine ? '' : `<button onclick="Community.report('${msg.uid}','${(msg.username||'').replace(/'/g,"\\'")}','${this.escapeHTML(msg.text).replace(/'/g,"\\'")}')" style="border:none; background:none; color:var(--muted-2); font-size:10px; margin-inline-start:8px; cursor:pointer;">🚩 إبلاغ</button>`;
-      div.innerHTML = `<div class="msg-author">${mine ? 'أنت' : (msg.username || 'مستخدم')}</div>${this.escapeHTML(msg.text)}<div class="msg-time">${time}${reportBtn}</div>`;
+      const reportBtn = mine ? '' : `<button onclick="Community.report('${msg.uid}','${(msg.username||'').replace(/'/g,"\\'")}','${escapeHTML(msg.text).replace(/'/g,"\\'")}')" style="border:none; background:none; color:var(--muted-2); font-size:10px; margin-inline-start:8px; cursor:pointer;">🚩 إبلاغ</button>`;
+      div.innerHTML = `<div class="msg-author">${mine ? 'أنت' : escapeHTML(msg.username || 'مستخدم')}</div>${escapeHTML(msg.text)}<div class="msg-time">${time}${reportBtn}</div>`;
       box.appendChild(div);
       box.scrollTop = box.scrollHeight;
     });
@@ -2270,12 +2281,6 @@ const Community = {
         box.innerHTML = '<div style="text-align:center; color:var(--muted); font-size:13px; padding:20px;">لسه مفيش رسايل، ابدأ أول محادثة! 👋</div>';
       }
     });
-  },
-
-  escapeHTML(str){
-    const div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
   },
 
   async send(e){
@@ -2357,7 +2362,7 @@ const Leaderboard = {
         return `<div class="lb-row ${mine ? 'mine' : ''}">
           <div class="lb-rank ${rankClass}">${rank <= 3 ? ['🥇','🥈','🥉'][rank-1] : rank}</div>
           <img class="lb-avatar" src="${u.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.username||'?')}`}" alt="">
-          <div class="lb-name">${u.username || 'مستخدم'} <span class="lb-level">${u.level || ''}</span></div>
+          <div class="lb-name">${escapeHTML(u.username || 'مستخدم')} <span class="lb-level">${escapeHTML(u.level || '')}</span></div>
           <div class="lb-xp">${u.xp || 0} XP</div>
         </div>`;
       }).join('');
@@ -2507,7 +2512,7 @@ const DailyChallenge = {
       el.innerHTML = `<div class="lesson-section-title" style="font-size:17px">ترتيب تحدي النهاردة</div>` + rows.map(([uid, u], i) => `
         <div class="lb-row ${uid === (State.user && State.user.uid) ? 'mine' : ''}">
           <div class="lb-rank">${i+1}</div>
-          <div class="lb-name">${u.username}</div>
+          <div class="lb-name">${escapeHTML(u.username)}</div>
           <div class="lb-xp">${u.score}/10</div>
         </div>`).join('');
     }catch(err){ console.error(err); }
@@ -2658,13 +2663,13 @@ const Duel = {
           <div class="duel-vs-label">VS</div>
           <div class="duel-player">
             <div class="duel-avatar"></div>
-            <div>${oppName}</div>
+            <div>${escapeHTML(oppName)}</div>
             <div class="duel-score">${oppScore}/10</div>
             <div class="duel-status ${oppFinished ? 'done' : 'waiting'}">${oppFinished ? '✅ خلص' : '⏳ لسه بيلعب'}</div>
           </div>
         </div>
         ${oppFinished ? `<div class="quiz-result"><div class="score">${myScore > oppScore ? '🏆 فزت!' : myScore < oppScore ? '😅 خسرت' : '🤝 تعادل'}</div>
-          <button class="btn btn-teal" onclick="Duel.exit()">تحدي جديد</button></div>` : `<p style="text-align:center; color:var(--muted)">مستنيين ${oppName} يخلّص...</p>`}
+          <button class="btn btn-teal" onclick="Duel.exit()">تحدي جديد</button></div>` : `<p style="text-align:center; color:var(--muted)">مستنيين ${escapeHTML(oppName)} يخلّص...</p>`}
       `;
       return;
     }
@@ -3214,9 +3219,16 @@ const Admin = {
         createdAt: firebase.database.ServerValue.TIMESTAMP,
         createdBy: State.user.uid
       });
-      Toast.show(`اتعمل الكود: ${code}`, 'success');
       document.getElementById('adminCodeName').value = '';
       this.loadCodes();
+      // بننسخ الكود للحافظة تلقائيًا، ولو المتصفح رفض (زي بعض متصفحات الموبايل)
+      // بنسيب المستخدم يعرف إنه لازم ينسخه يدوي من الجدول تحت.
+      try{
+        await navigator.clipboard.writeText(code);
+        Toast.show(`اتعمل الكود: ${code} (اتنسخ للحافظة ✅)`, 'success');
+      }catch(clipErr){
+        Toast.show(`اتعمل الكود: ${code} — انسخه من الجدول تحت`, 'success');
+      }
     }catch(err){
       console.error(err);
       Toast.show('حصل خطأ في إنشاء الكود — تأكد إنك أدمن', 'error');
@@ -3236,11 +3248,12 @@ const Admin = {
       tbody.innerHTML = entries.map(([id, c]) => `
         <tr>
           <td><code>${id}</code></td>
-          <td>${c.ownerName || '-'}</td>
+          <td>${escapeHTML(c.ownerName || '-')}</td>
           <td><span class="badge ${c.type === 'trial' ? 'badge-trial' : 'badge-full'}">${c.type === 'trial' ? 'تجربة' : 'كامل'}</span></td>
           <td><span class="badge ${c.status === 'disabled' ? 'badge-disabled' : 'badge-active'}">${c.status === 'disabled' ? 'متوقف' : 'نشط'}</span></td>
           <td>${c.deviceId ? '📱 مربوط' : '— غير مربوط'}</td>
           <td>
+            <button class="btn btn-sm btn-ghost" style="color:var(--ink-text); border-color:var(--border)" onclick="Admin.copyCode('${id}')">📋 نسخ</button>
             <button class="btn btn-sm btn-ghost" style="color:var(--ink-text); border-color:var(--border)" onclick="Admin.toggleCodeStatus('${id}','${c.status}')">${c.status === 'disabled' ? 'تفعيل' : 'إيقاف'}</button>
             ${c.deviceId ? `<button class="btn btn-sm btn-danger" onclick="Admin.unlinkDevice('${id}')">فك ربط الجهاز</button>` : ''}
           </td>
@@ -3249,6 +3262,15 @@ const Admin = {
     }catch(err){
       console.error(err);
       tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:26px;color:var(--coral)">مش قادر أجيب الأكواد — تأكد إنك أدمن</td></tr>`;
+    }
+  },
+
+  async copyCode(id){
+    try{
+      await navigator.clipboard.writeText(id);
+      Toast.show('اتنسخ الكود ✅', 'success');
+    }catch(err){
+      Toast.show('مش قادر أنسخ تلقائي، اختار الكود من الجدول يدوي', 'error');
     }
   },
 
@@ -3291,9 +3313,9 @@ const Admin = {
       tbody.innerHTML = entries.map(([uid, u]) => {
         const isBanned = banned[uid] === true;
         return `<tr>
-          <td>${u.username || '-'}</td>
-          <td style="font-size:12px; color:var(--muted)">${u.email || '-'}</td>
-          <td>${u.level || 'Pre-A1'}</td>
+          <td>${escapeHTML(u.username || '-')}</td>
+          <td style="font-size:12px; color:var(--muted)">${escapeHTML(u.email || '-')}</td>
+          <td>${escapeHTML(u.level || 'Pre-A1')}</td>
           <td>${u.xp || 0}</td>
           <td><span class="badge ${u.subscription && u.subscription.status === 'active' ? 'badge-active' : 'badge-trial'}">${u.subscription ? u.subscription.status : '-'}</span></td>
           <td><span class="badge ${isBanned ? 'badge-disabled' : 'badge-active'}">${isBanned ? 'محظور' : 'نشط'}</span></td>
@@ -3333,9 +3355,9 @@ const Admin = {
       }
       tbody.innerHTML = entries.map(([id, r]) => `
         <tr>
-          <td>${r.reporterUsername || '-'}</td>
-          <td>${r.reportedUsername || '-'}</td>
-          <td style="font-size:12.5px; max-width:220px;">${(r.reason || '').slice(0,120)}</td>
+          <td>${escapeHTML(r.reporterUsername || '-')}</td>
+          <td>${escapeHTML(r.reportedUsername || '-')}</td>
+          <td style="font-size:12.5px; max-width:220px;">${escapeHTML((r.reason || '').slice(0,120))}</td>
           <td style="font-size:11.5px; color:var(--muted)">${r.createdAt ? new Date(r.createdAt).toLocaleString('ar-EG') : '-'}</td>
           <td>
             <button class="btn btn-sm btn-danger" onclick="Admin.toggleBan('${r.reportedUid}', false)">حظر المُبلَّغ عنه</button>
@@ -3423,15 +3445,22 @@ auth.onAuthStateChanged(async (user) => {
 /* ============================================================
    MAINTENANCE MODE WATCHER
    ============================================================ */
-db.ref('system/maintenance').on('value', snap => {
-  const isMaintenance = snap.val() === true;
+// بنخزن آخر قيمة جايه من فايربيز عشان نقدر نعيد تقييم الشاشة
+// في أي لحظة تاني (زي لما State.isAdmin يتحدد بعد ما كان لسه false وقت أول تشغيل للـ listener)،
+// من غير ما نستنى قيمة system/maintenance تتغير تاني في قاعدة البيانات.
+let _lastMaintenanceValue = false;
+function applyMaintenanceState(){
   const screen = document.getElementById('maintenanceScreen');
-  if(isMaintenance && !State.isAdmin){
+  if(_lastMaintenanceValue && !State.isAdmin){
     screen.classList.remove('hidden');
     screen.style.display = 'flex';
   } else {
     screen.style.display = 'none';
   }
+}
+db.ref('system/maintenance').on('value', snap => {
+  _lastMaintenanceValue = snap.val() === true;
+  applyMaintenanceState();
 });
 
 /* ============================================================
